@@ -101,7 +101,6 @@ export interface GroupContextType {
   getAllUsers: () => User[];
   getGroupStudents: (groupId: string) => Promise<User[]>;
   refreshGroups: () => Promise<void>;
-<<<<<<< HEAD
   addSession: (name: string, description: string) => Promise<boolean>;
   deleteSession: (groupId: string) => Promise<boolean>;
   toggleSessionStatus: (groupId: string) => Promise<boolean>;
@@ -113,6 +112,4 @@ export interface GroupContextType {
   getSessionStudents: (groupId: string) => Promise<User[]>;
   refreshSessions: () => Promise<void>;
   sessions: Group[];
-=======
->>>>>>> 2bbcce18e7cf89c05082670fa8da5fa669f21283
 }

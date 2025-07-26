@@ -97,11 +97,7 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
     await loadGroups();
   };
 
-<<<<<<< HEAD
-  const addGroup = async (name: string): Promise<boolean> => {
-=======
   const addGroup = async (name: string, description: string): Promise<boolean> => {
->>>>>>> 2bbcce18e7cf89c05082670fa8da5fa669f21283
     try {
       // Parse name to extract day and time (format: "Lundi - 08h00")
       const parts = name.split(' - ');
@@ -191,11 +187,7 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
     }
   };
 
-<<<<<<< HEAD
-  const addSchedule = async (date: string, time: string): Promise<boolean> => {
-=======
   const addSchedule = async (groupId: string, date: string, time: string): Promise<boolean> => {
->>>>>>> 2bbcce18e7cf89c05082670fa8da5fa669f21283
     try {
       const { error } = await supabase
         .from('sessions')
@@ -437,11 +429,7 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
       refreshGroups,
       // Legacy aliases for compatibility
       sessions: groups,
-<<<<<<< HEAD
-      addSession: async (name: string) => addGroup(name),
-=======
       addSession: async (name: string, description: string) => addGroup(name, description),
->>>>>>> 2bbcce18e7cf89c05082670fa8da5fa669f21283
       deleteSession: deleteGroup,
       toggleSessionStatus: toggleGroupStatus,
       enrollInSession: enrollInGroup,
