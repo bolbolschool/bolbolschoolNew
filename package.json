@@ -6,13 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-<<<<<<< HEAD
-    "preview": "vite preview",
-    "lint": "eslint ."  
-=======
     "lint": "eslint .",
     "preview": "vite preview"
->>>>>>> 2bbcce18e7cf89c05082670fa8da5fa669f21283
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.52.0",
