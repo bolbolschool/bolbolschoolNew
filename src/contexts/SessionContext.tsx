@@ -98,51 +98,54 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
   };
 
   const addGroup = async (name: string, description: string): Promise<boolean> => {
-    try {
-      // Parse name to extract day and time (format: "Lundi - 08h00")
-      const parts = name.split(' - ');
-      if (parts.length !== 2) {
-        console.error('Invalid format. Use: "Day - Time"');
-        return false;
-      }
-      
-      const [day, time] = parts;
-      const groupId = `${day.toLowerCase()}-${time.replace('h', 'h')}`;
-      
-      // Check if group already exists
-      const { data: existingGroup } = await supabase
-        .from('sessions')
-        .select('id')
-        .eq('id', groupId)
-        .single();
-
-      if (existingGroup) {
-        console.error('Group already exists');
-        return false;
-      }
-      
-      const { error } = await supabase
-        .from('sessions')
-        .insert({
-          id: groupId,
-          day: day,
-          time: time,
-          max_capacity: 12,
-          is_active: true,
-        });
-
-      if (error) {
-        console.error('Error adding group:', error);
-        return false;
-      }
-
-      await refreshGroups();
-      return true;
-    } catch (error) {
-      console.error('Error adding group:', error);
+  try {
+    const parts = name.split(' - ');
+    if (parts.length !== 2) {
+      console.error('Invalid format. Use: "Day - Time"');
       return false;
     }
-  };
+
+    const [day, time] = parts;
+
+    // Vérifier s'il existe déjà une séance avec ce jour ET cette heure
+    const { data: existingSession } = await supabase
+      .from('sessions')
+      .select('id')
+      .eq('day', day)
+      .eq('time', time)
+      .single();
+
+    if (existingSession) {
+      console.error('Cette séance existe déjà');
+      return false;
+    }
+
+    // Générer un id unique (optionnel, ou tu peux laisser supabase auto-générer)
+    const groupId = `${day.toLowerCase()}-${time.replace('h', 'h')}`;
+
+    const { error } = await supabase
+      .from('sessions')
+      .insert({
+        id: groupId,
+        day,
+        time,
+        max_capacity: 12,
+        is_active: true,
+      });
+
+    if (error) {
+      console.error('Erreur lors de l\'ajout de la séance:', error);
+      return false;
+    }
+
+    await refreshGroups();
+    return true;
+  } catch (error) {
+    console.error('Erreur lors de l\'ajout de la séance:', error);
+    return false;
+  }
+};
+
 
   const deleteGroup = async (groupId: string): Promise<boolean> => {
     try {
