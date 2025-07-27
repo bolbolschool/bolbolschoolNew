@@ -99,16 +99,16 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
 
   const addGroup = async (name: string, description: string): Promise<boolean> => {
   try {
+    // Expected format: "Lundi - 08h00"
     const parts = name.split(' - ');
     if (parts.length !== 2) {
       console.error('Invalid format. Use: "Day - Time"');
       return false;
     }
-
     const [day, time] = parts;
 
-    // Vérifier s'il existe déjà une séance avec ce jour ET cette heure
-    const { data: existingSession } = await supabase
+    // Check if session already exists with same day and time
+    const { data: existingSession, error: existingError } = await supabase
       .from('sessions')
       .select('id')
       .eq('day', day)
@@ -116,35 +116,37 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
       .single();
 
     if (existingSession) {
-      console.error('Cette séance existe déjà');
+      console.error('Session already exists for this day and time.');
+      return false;
+    }
+    if (existingError && existingError.code !== 'PGRST116') { // PGRST116 = no rows found, ignore it
+      console.error('Error checking existing session:', existingError);
       return false;
     }
 
-    // Générer un id unique (optionnel, ou tu peux laisser supabase auto-générer)
-    const groupId = `${day.toLowerCase()}-${time.replace('h', 'h')}`;
-
-    const { error } = await supabase
+    // Insert new session with correct field names
+    const { error: insertError } = await supabase
       .from('sessions')
       .insert({
-        id: groupId,
-        day,
-        time,
+        day: day,
+        time: time,
         max_capacity: 12,
         is_active: true,
       });
 
-    if (error) {
-      console.error('Erreur lors de l\'ajout de la séance:', error);
+    if (insertError) {
+      console.error('Error inserting session:', insertError);
       return false;
     }
 
     await refreshGroups();
     return true;
   } catch (error) {
-    console.error('Erreur lors de l\'ajout de la séance:', error);
+    console.error('Unexpected error adding session:', error);
     return false;
   }
 };
+
 
 
   const deleteGroup = async (groupId: string): Promise<boolean> => {
