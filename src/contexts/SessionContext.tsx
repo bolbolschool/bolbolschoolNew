@@ -7,7 +7,7 @@ const GroupContext = createContext<GroupContextType | undefined>(undefined);
 export const useSession = () => {
   const context = useContext(GroupContext);
   if (!context) {
-    throw new Error('useSession must be used within a GroupProvider');
+    throw new Error('useSession must be used within a SessionProvider');
   }
   return context;
 };
@@ -23,7 +23,7 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
 
   const loadGroups = async () => {
     try {
-      // Load groups
+      // Load groups (sessions)
       const { data: groupsData, error: groupsError } = await supabase
         .from('sessions')
         .select('*')
@@ -34,21 +34,13 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
         return;
       }
 
-      // Load schedules
-      const { data: schedulesData, error: schedulesError } = await supabase
-        .from('sessions')
-        .select('*')
-        .order('day', { ascending: true });
+      // We don't seem to have separate schedules, so use groupsData for schedules as well
+      const schedulesData = groupsData || [];
 
-      if (schedulesError) {
-        console.error('Error loading schedules:', schedulesError);
-        return;
-      }
-
-      // Get enrollment counts for each group
+      // Get enrollment counts for each group/session
       const { data: enrollmentsData, error: enrollmentsError } = await supabase
         .from('enrollments')
-        .select('group_id');
+        .select('session_id');
 
       if (enrollmentsError) {
         console.error('Error loading enrollments:', enrollmentsError);
@@ -56,12 +48,12 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
       }
 
       // Count enrollments per group
-      const enrollmentCounts = enrollmentsData.reduce((acc, enrollment) => {
-        acc[enrollment.group_id] = (acc[enrollment.group_id] || 0) + 1;
+      const enrollmentCounts = (enrollmentsData || []).reduce((acc, enrollment) => {
+        acc[enrollment.session_id] = (acc[enrollment.session_id] || 0) + 1;
         return acc;
       }, {} as Record<string, number>);
 
-      const groupsWithCounts: Group[] = groupsData.map(group => ({
+      const groupsWithCounts: Group[] = (groupsData || []).map(group => ({
         id: group.id,
         name: `${group.day} - ${group.time}`,
         description: `Séance du ${group.day} à ${group.time}`,
@@ -97,152 +89,107 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
     await loadGroups();
   };
 
-  const addGroup = async (name: string, description: string): Promise<boolean> => {
+  // Rename addGroup to addSession and adjust to accept day and time directly
+  const addSession = async (day: string, time: string): Promise<boolean> => {
     try {
-      // Parse name to extract day and time (format: "Lundi - 08h00")
-      const parts = name.split(' - ');
-      if (parts.length !== 2) {
-        console.error('Invalid format. Use: "Day - Time"');
-        return false;
-      }
-      
-      const [day, time] = parts;
-      const groupId = `${day.toLowerCase()}-${time.replace('h', 'h')}`;
-      
-      // Check if group already exists
-      const { data: existingGroup } = await supabase
+      const sessionId = `${day.toLowerCase()}-${time.replace(/:/g, 'h').replace(/\s/g, '')}`;
+
+      // Check if session already exists
+      const { data: existingSession, error: existingError } = await supabase
         .from('sessions')
         .select('id')
-        .eq('id', groupId)
+        .eq('id', sessionId)
         .single();
 
-      if (existingGroup) {
-        console.error('Group already exists');
+      if (existingError && existingError.code !== 'PGRST116') {
+        // PGRST116 = Not found (which is fine)
+        console.error('Error checking session existence:', existingError);
         return false;
       }
-      
+
+      if (existingSession) {
+        console.error('Session already exists');
+        return false;
+      }
+
       const { error } = await supabase
         .from('sessions')
         .insert({
-          id: groupId,
-          day: day,
-          time: time,
+          id: sessionId,
+          day,
+          time,
           max_capacity: 12,
+          enrollment_count: 0,
           is_active: true,
         });
 
       if (error) {
-        console.error('Error adding group:', error);
+        console.error('Error adding session:', error);
         return false;
       }
 
       await refreshGroups();
       return true;
     } catch (error) {
-      console.error('Error adding group:', error);
+      console.error('Error adding session:', error);
       return false;
     }
   };
 
-  const deleteGroup = async (groupId: string): Promise<boolean> => {
+  const deleteSession = async (sessionId: string): Promise<boolean> => {
     try {
       const { error } = await supabase
         .from('sessions')
         .delete()
-        .eq('id', groupId);
+        .eq('id', sessionId);
 
       if (error) {
-        console.error('Error deleting group:', error);
+        console.error('Error deleting session:', error);
         return false;
       }
 
       await refreshGroups();
       return true;
     } catch (error) {
-      console.error('Error deleting group:', error);
+      console.error('Error deleting session:', error);
       return false;
     }
   };
 
-  const toggleGroupStatus = async (groupId: string): Promise<boolean> => {
+  const toggleSessionStatus = async (sessionId: string): Promise<boolean> => {
     try {
-      const group = groups.find(g => g.id === groupId);
-      if (!group) return false;
+      const session = groups.find(g => g.id === sessionId);
+      if (!session) return false;
 
       const { error } = await supabase
         .from('sessions')
-        .update({ is_active: !group.isActive })
-        .eq('id', groupId);
+        .update({ is_active: !session.isActive })
+        .eq('id', sessionId);
 
       if (error) {
-        console.error('Error toggling group status:', error);
+        console.error('Error toggling session status:', error);
         return false;
       }
 
       await refreshGroups();
       return true;
     } catch (error) {
-      console.error('Error toggling group status:', error);
+      console.error('Error toggling session status:', error);
       return false;
     }
   };
 
-  const addSchedule = async (groupId: string, date: string, time: string): Promise<boolean> => {
+  const enrollInSession = async (sessionId: string, userId: string): Promise<boolean> => {
     try {
-      const { error } = await supabase
-        .from('sessions')
-        .insert({
-          id: `${date}-${time}`,
-          day: date,
-          time,
-          max_capacity: 12,
-          is_active: true
-        });
-
-      if (error) {
-        console.error('Error adding schedule:', error);
-        return false;
-      }
-
-      await refreshGroups();
-      return true;
-    } catch (error) {
-      console.error('Error adding schedule:', error);
-      return false;
-    }
-  };
-
-  const deleteSchedule = async (scheduleId: string): Promise<boolean> => {
-    try {
-      const { error } = await supabase
-        .from('sessions')
-        .delete()
-        .eq('id', scheduleId);
-
-      if (error) {
-        console.error('Error deleting schedule:', error);
-        return false;
-      }
-
-      await refreshGroups();
-      return true;
-    } catch (error) {
-      console.error('Error deleting schedule:', error);
-      return false;
-    }
-  };
-
-  const enrollInGroup = async (groupId: string, userId: string): Promise<boolean> => {
-    try {
-      // Get fresh group data
-      const { data: groupData, error: groupError } = await supabase
+      // Get fresh session data
+      const { data: sessionData, error: sessionError } = await supabase
         .from('sessions')
         .select('*')
-        .eq('id', groupId)
+        .eq('id', sessionId)
         .single();
 
-      if (groupError || !groupData || !groupData.is_active) {
-        console.error('Group not found or inactive:', groupError);
+      if (sessionError || !sessionData || !sessionData.is_active) {
+        console.error('Session not found or inactive:', sessionError);
         return false;
       }
 
@@ -250,15 +197,15 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
       const { data: enrollments, error: countError } = await supabase
         .from('enrollments')
         .select('id')
-        .eq('session_id', groupId);
+        .eq('session_id', sessionId);
 
       if (countError) {
         console.error('Error checking enrollment count:', countError);
         return false;
       }
 
-      if (enrollments && enrollments.length >= groupData.max_capacity) {
-        console.error('Group is full');
+      if (enrollments && enrollments.length >= sessionData.max_capacity) {
+        console.error('Session is full');
         return false;
       }
 
@@ -273,63 +220,63 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
         .from('enrollments')
         .insert({
           user_id: userId,
-          session_id: groupId,
+          session_id: sessionId,
         });
 
       if (error) {
-        console.error('Error enrolling in group:', error);
+        console.error('Error enrolling in session:', error);
         return false;
       }
 
       await refreshGroups();
       return true;
     } catch (error) {
-      console.error('Error enrolling in group:', error);
+      console.error('Error enrolling in session:', error);
       return false;
     }
   };
 
-  const removeFromGroup = async (groupId: string, userId: string): Promise<boolean> => {
+  const removeFromSession = async (sessionId: string, userId: string): Promise<boolean> => {
     try {
       const { error } = await supabase
         .from('enrollments')
         .delete()
         .eq('user_id', userId)
-        .eq('session_id', groupId);
+        .eq('session_id', sessionId);
 
       if (error) {
-        console.error('Error removing from group:', error);
+        console.error('Error removing from session:', error);
         return false;
       }
 
       await refreshGroups();
       return true;
     } catch (error) {
-      console.error('Error removing from group:', error);
+      console.error('Error removing from session:', error);
       return false;
     }
   };
 
-  const moveStudentToGroup = async (studentId: string, fromGroupId: string, toGroupId: string): Promise<boolean> => {
+  const moveStudentToSession = async (studentId: string, fromSessionId: string, toSessionId: string): Promise<boolean> => {
     try {
-      const toGroup = groups.find(g => g.id === toGroupId);
-      if (!toGroup || (toGroup.enrollmentCount || 0) >= toGroup.maxCapacity) {
+      const toSession = groups.find(g => g.id === toSessionId);
+      if (!toSession || (toSession.enrollmentCount || 0) >= toSession.maxCapacity) {
         return false;
       }
 
-      // Remove from current group
+      // Remove from current session
       await supabase
         .from('enrollments')
         .delete()
         .eq('user_id', studentId)
-        .eq('session_id', fromGroupId);
+        .eq('session_id', fromSessionId);
 
-      // Add to new group
+      // Add to new session
       const { error } = await supabase
         .from('enrollments')
         .insert({
           user_id: studentId,
-          session_id: toGroupId,
+          session_id: toSessionId,
         });
 
       if (error) {
@@ -345,7 +292,7 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
     }
   };
 
-  const getUserGroup = async (userId: string): Promise<Group | null> => {
+  const getUserSession = async (userId: string): Promise<Group | null> => {
     try {
       const { data, error } = await supabase
         .from('enrollments')
@@ -357,38 +304,38 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
         return null;
       }
 
-      const groupData = data.sessions as any;
+      const sessionData = data.sessions as any;
       return {
-        id: groupData.id,
-        name: `${groupData.day} - ${groupData.time}`,
-        description: `Séance du ${groupData.day} à ${groupData.time}`,
-        maxCapacity: groupData.max_capacity,
-        isActive: groupData.is_active,
-        createdAt: groupData.created_at,
+        id: sessionData.id,
+        name: `${sessionData.day} - ${sessionData.time}`,
+        description: `Séance du ${sessionData.day} à ${sessionData.time}`,
+        maxCapacity: sessionData.max_capacity,
+        isActive: sessionData.is_active,
+        createdAt: sessionData.created_at,
       };
     } catch (error) {
       return null;
     }
   };
 
-  const getGroupById = (groupId: string): Group | null => {
-    return groups.find(group => group.id === groupId) || null;
+  const getSessionById = (sessionId: string): Group | null => {
+    return groups.find(group => group.id === sessionId) || null;
   };
 
-  const getGroupSchedules = (groupId: string): GroupSchedule[] => {
-    return schedules.filter(schedule => schedule.groupId === groupId && schedule.isActive);
+  const getSessionSchedules = (sessionId: string): GroupSchedule[] => {
+    return schedules.filter(schedule => schedule.groupId === sessionId && schedule.isActive);
   };
 
   const getAllUsers = (): User[] => {
     return [];
   };
 
-  const getGroupStudents = async (groupId: string): Promise<User[]> => {
+  const getSessionStudents = async (sessionId: string): Promise<User[]> => {
     try {
       const { data, error } = await supabase
         .from('enrollments')
         .select('users(*)')
-        .eq('session_id', groupId);
+        .eq('session_id', sessionId);
 
       if (error || !data) {
         return [];
@@ -403,44 +350,5 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
         createdAt: enrollment.users.created_at,
       }));
     } catch (error) {
-      console.error('Error getting group students:', error);
-      return [];
-    }
-  };
-
-  return (
-    <GroupContext.Provider value={{
-      groups,
-      schedules,
-      loading,
-      addGroup,
-      deleteGroup,
-      toggleGroupStatus,
-      addSchedule,
-      deleteSchedule,
-      enrollInGroup,
-      removeFromGroup,
-      moveStudentToGroup,
-      getUserGroup,
-      getGroupById,
-      getGroupSchedules,
-      getAllUsers,
-      getGroupStudents,
-      refreshGroups,
-      // Legacy aliases for compatibility
-      sessions: groups,
-      addSession: async (name: string, description: string) => addGroup(name, description),
-      deleteSession: deleteGroup,
-      toggleSessionStatus: toggleGroupStatus,
-      enrollInSession: enrollInGroup,
-      removeFromSession: removeFromGroup,
-      moveStudentToSession: moveStudentToGroup,
-      getUserSession: getUserGroup,
-      getSessionById: getGroupById,
-      getSessionStudents: getGroupStudents,
-      refreshSessions: refreshGroups,
-    }}>
-      {children}
-    </GroupContext.Provider>
-  );
-};
+      console.error('Error getting session students:', error);
+     
