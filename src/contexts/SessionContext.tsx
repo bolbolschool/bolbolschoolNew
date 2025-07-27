@@ -100,7 +100,6 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
 
   const addGroup = async (name: string, description: string): Promise<boolean> => {
   try {
-    // Expected format: "Lundi - 08h00"
     const parts = name.split(' - ');
     if (parts.length !== 2) {
       console.error('Invalid format. Use: "Day - Time"');
@@ -108,7 +107,7 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
     }
     const [day, time] = parts;
 
-    // Check if session already exists with same day and time
+    // Check if session exists (day + time)
     const { data: existingSession, error: existingError } = await supabase
       .from('sessions')
       .select('id')
@@ -116,21 +115,22 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
       .eq('time', time)
       .single();
 
-    if (existingSession) {
+    if (existingSession !== null) {
       console.error('Session already exists for this day and time.');
       return false;
     }
-    if (existingError && existingError.code !== 'PGRST116') { // PGRST116 = no rows found, ignore it
+    if (existingError) {
       console.error('Error checking existing session:', existingError);
       return false;
     }
 
-    // Insert new session with correct field names
+    // Insert new session with generated UUID
     const { error: insertError } = await supabase
       .from('sessions')
       .insert({
-        day: day,
-        time: time,
+        id: uuidv4(),
+        day,
+        time,
         max_capacity: 12,
         is_active: true,
       });
