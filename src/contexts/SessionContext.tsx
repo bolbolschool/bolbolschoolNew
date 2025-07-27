@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Group, GroupSchedule, GroupContextType, User } from '../types';
 import { supabase } from '../lib/supabase';
+import { v4 as uuidv4 } from 'uuid';
 
 const GroupContext = createContext<GroupContextType | undefined>(undefined);
 
